@@ -13,7 +13,6 @@ pip install -U git+https://github.com/ntt123/haiku_trainer
 ## Example
 
 ```python
-
 from functools import partial
 import haiku as hk
 import jax
@@ -45,17 +44,17 @@ def loss_fn(inputs, is_training):
 
 
 trainer = Trainer(
-    train_iter=data_iter('train'),
-    val_iter=data_iter('val'),
     train_loss_fn=partial(loss_fn, is_training=True),
+    train_data_iter=data_iter('train'),
     val_loss_fn=partial(loss_fn, is_training=False),
+    val_data_iter=data_iter('val'),
     optimizer=optax.adam(1e-3),
     ckpt_freq=5000,
     logging_freq=1000,
     out_dir='/tmp/regression',
     resume=False)
 
-trainer.fit(num_steps=10_000)
+trainer.fit(total_steps=10_000)
 
 # inference
 with open('/tmp/regression/hk_state_0005000.ckpt', 'rb') as f:

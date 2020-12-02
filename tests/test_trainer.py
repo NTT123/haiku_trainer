@@ -23,5 +23,5 @@ def test_trainer():
       y = jax.random.normal(rng_, (3, 1))
       yield (x, y)
 
-  trainer = Trainer(data_iter(), data_iter(), loss_fn, loss_fn)
+  trainer = Trainer(loss_fn, data_iter(), loss_fn, data_iter())
   trainer.fit(1000)
