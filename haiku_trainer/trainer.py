@@ -11,7 +11,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-import tqdm
+from tqdm.auto import tqdm
 from jax.numpy import ndarray
 
 
@@ -119,12 +119,10 @@ Args:
     pickle.dump(state, file_obj)
 
   def fit(self, num_steps):
-    trange = tqdm.trange(self.last_step+1, num_steps,
-                         initial=self.last_step+1,
-                         total=num_steps,
-                         desc='training',
-                         ascii=True,
-                         ncols=80)
+    trange = tqdm(range(self.last_step+1, num_steps),
+                  initial=self.last_step+1,
+                  total=num_steps,
+                  desc='training')
     start_time = time.perf_counter()
     for step in trange:
       inputs = next(self.train_iter)
