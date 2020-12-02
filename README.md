@@ -6,7 +6,7 @@ A utility class for training dm-haiku models.
 ## Installation
 
 ```
-pip install -U git+https://github.com/ntt123/hktrainer
+pip install -U git+https://github.com/ntt123/haiku_trainer
 ```
 
 
