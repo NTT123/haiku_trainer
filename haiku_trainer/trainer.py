@@ -33,7 +33,8 @@ class Trainer:
       ckpt_freq: int = 1000,
       logging_freq: int = 100,
       out_dir: str = '/tmp/ckpts',
-      resume: bool = False
+      resume: bool = False,
+      wandb=None
   ):
     """Create a trainer object.
 
@@ -47,6 +48,7 @@ Args:
   - logging_freq: logging frequency.
   - out_dir: output directory for saving checkpoints.
   - resume: resume the trainer to the latest checkpoint.
+  - wandb: wandb module object for logging (or None to disable).
 """
     self.ckpt_freq = ckpt_freq
     self.logging_freq = logging_freq
@@ -65,6 +67,7 @@ Args:
     if resume:
       self.resume()
     self.start_time = time.perf_counter()
+    self.wandb = wandb
 
   def compile(self):
     _train_loss_fn = hk.transform_with_state(self.train_loss_fn)
@@ -176,6 +179,13 @@ Args:
         val_loss = self.avg_validation_loss()
         duration = self.tiktok()
         trange.write(f'step {step}  train loss {train_loss:.3f}  val loss {val_loss:.3f}  duration {duration:.3f}')
+        if self.wandb is not None:
+          self.wandb.log({
+              'step': step,
+              'train loss': train_loss,
+              'val loss': val_loss,
+              'duration': duration
+          })
 
       if step % self.ckpt_freq == 0:
         file_path = self.save_step(step)
