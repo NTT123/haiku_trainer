@@ -68,6 +68,10 @@ Args:
       self.resume()
     self.start_time = time.perf_counter()
     self.wandb = wandb
+    self.callbacks = []
+
+  def register_callback(self, callback_freq: int, callback_fn):
+    self.callbacks.append((callback_freq, callback_fn))
 
   def compile(self):
     _train_loss_fn = hk.transform_with_state(self.train_loss_fn)
@@ -174,6 +178,10 @@ Args:
       if step % 10 == 0:
         self.validation_step()
 
+      for callback_freq, callback_fn in self.callbacks:
+        if step % callback_freq == 0:
+          self.run_func_with_state(partial(callback_fn, trainer=self))
+          
       if step % self.logging_freq == 0:
         train_loss = self.avg_training_loss()
         val_loss = self.avg_validation_loss()
