@@ -4,7 +4,7 @@ import pickle
 import time
 from functools import partial
 from pathlib import Path
-from typing import Any, Deque, List, NamedTuple
+from typing import Any, Callable, Deque, List, NamedTuple
 
 import haiku as hk
 import jax
@@ -16,6 +16,14 @@ from tqdm.auto import tqdm
 
 
 class TrainerState(NamedTuple):
+  """TrainerState data structure.
+
+  Attributes:
+    params (hk.Params): model parameters.
+    aux (hk.Params): model auxilary parameters.
+    optim (optax.OptState): optimizer states.
+    rng (ndarray): random states
+  """
   params: hk.Params
   aux: hk.Params
   optim: optax.OptState
@@ -23,6 +31,8 @@ class TrainerState(NamedTuple):
 
 
 class Trainer:
+  """Trainer class"""
+
   def __init__(
       self,
       train_loss_fn,
@@ -38,17 +48,20 @@ class Trainer:
   ):
     """Create a trainer object.
 
+    This object will keep all the information to train a haiku model. Including: model parameters, current training step, etc.
+
+
 Args:
-  - train_loss_fn: a function which creates model and computes the training loss.
-  - train_data_iter: an iterable object which yields a training data mini-batch.
-  - val_loss_fn: a function which creates model and computes the validation loss.
-  - val_data_iter: an iterable object which yields a valalidation data mini-batch.
-  - optimizer: an optax optimizer. For example: optax.adam.
-  - ckpt_freq: checkpoint frequency.
-  - logging_freq: logging frequency.
-  - out_dir: output directory for saving checkpoints.
-  - resume: resume the trainer to the latest checkpoint.
-  - wandb: wandb module object for logging (or None to disable).
+  train_loss_fn: a function which creates model and computes the training loss.
+  train_data_iter: an iterable object which yields a training data mini-batch.
+  val_loss_fn: a function which creates model and computes the validation loss.
+  val_data_iter: an iterable object which yields a valalidation data mini-batch.
+  optimizer: an optax optimizer. For example: optax.adam.
+  ckpt_freq: checkpoint frequency.
+  logging_freq: logging frequency.
+  out_dir: output directory for saving checkpoints.
+  resume: resume the trainer to the latest checkpoint.
+  wandb: wandb module object for logging (or None to disable).
 """
     self.ckpt_freq = ckpt_freq
     self.logging_freq = logging_freq
@@ -70,10 +83,29 @@ Args:
     self.wandb = wandb
     self.callbacks = []
 
-  def register_callback(self, callback_freq: int, callback_fn):
+  def register_callback(self, callback_freq: int, callback_fn: Callable):
+    """Register a callback function in training process.
+
+    Function ``callback_fn`` will be called at every ``callback_freq`` training steps.
+
+    The callback function is called indirectly by ``Trainer.run_func_with_state``.
+    This allows the function to access model states and parameters.
+
+    Args:
+      callback_freq (int): call function at `steps % callback_freq == 0`.
+      callback_fn (Callable): the function to carry the task.
+
+    """
+
     self.callbacks.append((callback_freq, callback_fn))
 
   def compile(self):
+    """Compile the update function and validation function.
+
+    The update function is used to update parameters of the network.
+    It first calls the loss function, compute the gradient,
+    and finally calls the optimizer.
+    """
     _train_loss_fn = hk.transform_with_state(self.train_loss_fn)
     _vag = jax.value_and_grad(_train_loss_fn.apply, has_aux=True)
     rng = jax.random.PRNGKey(42)
@@ -99,12 +131,17 @@ Args:
       self.jit_val_loss_fn = jax.jit(_val_loss_fn)
 
   def tiktok(self):
+    """Compute the elapsed time since the last time this function is called."""
     end_time = time.perf_counter()
     duration = end_time - self.start_time
     self.start_time = end_time
     return duration
 
   def resume(self):
+    """Find the latest checkpoint in the output directory.
+
+    Resume the network states to the checkpoint.
+    """
     path = self.find_latest_checkpoint()
     if path is not None:
       print(f'loading latest checkpoint at {path}')
@@ -116,21 +153,34 @@ Args:
       print(f'No checkpoint was found at {self.out_dir}')
 
   def find_latest_checkpoint(self):
+    """Return the latest checkpoint in the output directory."""
     ckpts = sorted(self.out_dir.glob('hk_state_*.ckpt'))
     return ckpts[-1] if len(ckpts) > 0 else None
 
   def run_func_with_state(self, fn):
+    """Transform function ``fn`` and run it.
+
+    Allows the function ``fn`` to access the model's parameters and states.
+    This function is very useful when we want to run prediction after the model is trained.
+
+    Args:
+      fn(Callable): the function will be transformed.
+    """
     obj = hk.transform_with_state(fn)
     return obj.apply(self.state.params, self.state.aux, self.state.rng)[0]
 
   def avg_training_loss(self):
+    """Return the current average training loss."""
     return sum(self.train_losses).item() / len(self.train_losses)
 
   def avg_validation_loss(self):
+    """Return the current average validation loss."""
     return sum(self.val_losses).item() / len(self.val_losses)
 
   def training_step(self):
-    """update network parameters. increase self.last_step.
+    """Run one training step:
+      * update network parameters,
+      * and increase ``Trainer.last_step``.
     """
     inputs = next(self.train_iter)
     self.state, loss = self.jit_update_ops(self.state, inputs)
@@ -139,35 +189,50 @@ Args:
     return loss
 
   def validation_step(self):
+    """Run one validation step."""
     inputs = next(self.val_iter)
     loss = self.jit_val_loss_fn(inputs, self.state)
     self.val_losses.append(loss)
     return loss
 
   def load_step(self, step: int):
+    """Load model states at checkpoint ``step``."""
     file_path = self.out_dir / f'hk_state_{step:07d}.ckpt'
     with open(file_path, 'rb') as f:
       self.load_state(f)
     return file_path
 
   def load_state(self, file_obj):
+    """Load model states from file object ``file_obj``."""
     state = pickle.load(file_obj)
     self.state = jax.device_put(state)
 
   def save_step(self, step: int):
+    """Save model state at step."""
     file_path = self.out_dir / f'hk_state_{step:07d}.ckpt'
     with open(file_path, 'wb') as f:
       self.save_state(f)
     return file_path
 
   def save_state(self, file_obj):
+    """Save model state to file objection ``file_obj``"""
     state = jax.device_get(self.state)
     pickle.dump(state, file_obj)
 
-  def trange(self, total_steps):
+  def trange(self, total_steps: int):
+    """Return a tqdm object of a ``range(last_step+1, total_steps)``."""
     return tqdm(range(self.last_step+1, total_steps), initial=self.last_step+1, total=total_steps, desc='training')
 
-  def fit(self, total_steps=1):
+  def fit(self, total_steps: int = 1):
+    """Fit model with the data.
+
+    Call registered callback functions.
+
+    Also create a checkpoint at the last training step.
+
+    Args:
+      total_steps (int): the total training steps(does not include validation step)
+    """
     if self.val_loss_fn is None:
       raise ValueError('`fit` method does not support `val_loss_fn = None`')
 
@@ -181,7 +246,7 @@ Args:
       for callback_freq, callback_fn in self.callbacks:
         if step % callback_freq == 0:
           self.run_func_with_state(partial(callback_fn, trainer=self))
-          
+
       if step % self.logging_freq == 0:
         train_loss = self.avg_training_loss()
         val_loss = self.avg_validation_loss()

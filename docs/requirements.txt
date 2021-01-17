@@ -1,0 +1,5 @@
+sphinx_rtd_theme
+sphinxcontrib.bibtex
+sphinxcontrib.katex
+sphinx_autodoc_typehints
+nbsphinx
