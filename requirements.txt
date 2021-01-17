@@ -1,0 +1,5 @@
+jax==0.2.6
+jaxlib==0.1.57
+optax==0.0.2
+tqdm
+git+https://github.com/deepmind/dm-haiku
