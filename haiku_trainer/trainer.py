@@ -96,8 +96,8 @@ Args:
       callback_fn (Callable): the function to carry the task.
 
     """
-
-    self.callbacks.append((callback_freq, callback_fn))
+    callback_obj = hk.transform_with_state(partial(callback_fn, trainer=self))
+    self.callbacks.append((callback_freq, callback_obj.apply))
 
   def compile(self):
     """Compile the update function and validation function.
@@ -157,17 +157,18 @@ Args:
     ckpts = sorted(self.out_dir.glob('hk_state_*.ckpt'))
     return ckpts[-1] if len(ckpts) > 0 else None
 
-  def run_func_with_state(self, fn):
+  def run_func_with_state(self, fn, do_transform=True):
     """Transform function ``fn`` and run it.
 
     Allows the function ``fn`` to access the model's parameters and states.
     This function is very useful when we want to run prediction after the model is trained.
 
     Args:
-      fn(Callable): the function will be transformed.
+      fn (Callable): the function will be transformed.
+      do_transform (bool): call ``hk.transform_with_state`` if `true`.
     """
-    obj = hk.transform_with_state(fn)
-    return obj.apply(self.state.params, self.state.aux, self.state.rng)[0]
+    fn = hk.transform_with_state(fn).apply if do_transform else fn
+    return fn(self.state.params, self.state.aux, self.state.rng)[0]
 
   def avg_training_loss(self):
     """Return the current average training loss."""
@@ -245,7 +246,7 @@ Args:
 
       for callback_freq, callback_fn in self.callbacks:
         if step % callback_freq == 0:
-          self.run_func_with_state(partial(callback_fn, trainer=self))
+          self.run_func_with_state(callback_fn, do_transform=False)
 
       if step % self.logging_freq == 0:
         train_loss = self.avg_training_loss()
